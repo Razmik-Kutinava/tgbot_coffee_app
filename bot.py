@@ -298,9 +298,11 @@ def get_order_keyboard(order: Dict, order_index: int, total_orders: int, user_id
     order_id = str(order.get("id", ""))
     location_id = str(order.get("locationId", "")) or str(order.get("location_id", ""))
     
-    if not location_id and order.get("location"):
+    # Получаем location объект для геолокации
+    location = order.get("location")
+    
+    if not location_id and location:
         # Пробуем получить location_id из объекта location
-        location = order.get("location")
         if isinstance(location, dict):
             location_id = str(location.get("id", "")) or str(location.get("locationId", ""))
     
@@ -330,14 +332,14 @@ def get_order_keyboard(order: Dict, order_index: int, total_orders: int, user_id
     
     # Кнопка для просмотра геолокации на карте, если есть
     # Используем геолокацию из заказа или из профиля пользователя
-    if not location or not location.get("latitude") or not location.get("longitude"):
+    if not location or not isinstance(location, dict) or not location.get("latitude") or not location.get("longitude"):
         # Если в заказе нет геолокации, пробуем получить из профиля
         if user_id:
             user_data = get_user_data(user_id)
             if user_data and user_data.get("location"):
                 location = user_data["location"]
     
-    if location and location.get("latitude") and location.get("longitude"):
+    if location and isinstance(location, dict) and location.get("latitude") and location.get("longitude"):
         lat = location.get("latitude")
         lon = location.get("longitude")
         map_url = f"https://www.google.com/maps?q={lat},{lon}"
@@ -348,29 +350,8 @@ def get_order_keyboard(order: Dict, order_index: int, total_orders: int, user_id
             )
         ])
     
-    # Кнопки навигации
-    nav_buttons = []
-    if order_index > 0:
-        nav_buttons.append(InlineKeyboardButton(text="<<", callback_data=f"order_prev_{order_index}"))
-    else:
-        nav_buttons.append(InlineKeyboardButton(text=" ", callback_data="noop"))
-    
-    nav_buttons.append(InlineKeyboardButton(
-        text=f"{order_index + 1} из {total_orders}",
-        callback_data="noop"
-    ))
-    
-    if order_index < total_orders - 1:
-        nav_buttons.append(InlineKeyboardButton(text=">>", callback_data=f"order_next_{order_index}"))
-    else:
-        nav_buttons.append(InlineKeyboardButton(text=" ", callback_data="noop"))
-    
-    keyboard.append(nav_buttons)
-    
-    # Кнопка "В главное меню"
-    keyboard.append([
-        InlineKeyboardButton(text="В главное меню", callback_data="back_to_menu")
-    ])
+    # Кнопки навигации убраны, так как теперь показываем все заказы списком
+    # Но оставляем для совместимости, если понадобится
     
     return InlineKeyboardMarkup(keyboard)
 
@@ -1494,7 +1475,7 @@ async def show_order_history(update: Update, context: ContextTypes.DEFAULT_TYPE,
                 except:
                     date_str = str(order_date)[:10] if len(str(order_date)) > 10 else str(order_date)
             
-            message_text += f"**{idx + 1}. {order_name}**\n"
+            message_text += f"{idx + 1}. {order_name}\n"
             if order_total:
                 message_text += f"💰 {order_total} ₽\n"
             if date_str:
@@ -1506,8 +1487,9 @@ async def show_order_history(update: Update, context: ContextTypes.DEFAULT_TYPE,
         for idx, order in enumerate(orders):
             order_keyboard = get_order_keyboard(order, idx, total_orders, user_id)
             # Добавляем кнопки из клавиатуры заказа
-            for row in order_keyboard.inline_keyboard:
-                keyboard.append(row)
+            if order_keyboard and order_keyboard.inline_keyboard:
+                for row in order_keyboard.inline_keyboard:
+                    keyboard.append(row)
         
         # Кнопка "В главное меню"
         keyboard.append([
@@ -1521,13 +1503,11 @@ async def show_order_history(update: Update, context: ContextTypes.DEFAULT_TYPE,
             await update.message.reply_text(
                 message_text,
                 reply_markup=final_keyboard,
-                parse_mode="Markdown",
             )
         elif update.callback_query:
             await update.callback_query.message.edit_text(
                 message_text,
                 reply_markup=final_keyboard,
-                parse_mode="Markdown",
             )
             await update.callback_query.answer()
         
