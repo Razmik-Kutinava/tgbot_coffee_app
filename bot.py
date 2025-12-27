@@ -260,64 +260,73 @@ def get_user_welcome_context(user_id: int) -> Optional[Dict]:
     return None
 
 
+def build_repeat_order_url(order_id: str, location_id: str) -> str:
+    """Формирует URL для повторного заказа с параметрами в hash"""
+    import urllib.parse
+    import base64
+    import json
+    
+    web_app_url = WEB_APP_URL
+    
+    # Параметры для передачи в WebApp через hash
+    params = {
+        "action": "repeat_order",
+        "order_id": order_id,
+        "location_id": location_id,
+    }
+    
+    # Формируем hash параметры
+    params_str = urllib.parse.urlencode(params, doseq=False)
+    
+    # Также добавляем base64 JSON для надёжности
+    json_str = json.dumps(params, ensure_ascii=False)
+    b64_data = base64.urlsafe_b64encode(json_str.encode('utf-8')).decode('ascii')
+    
+    # Используем hash вместо query параметров (Telegram игнорирует query)
+    web_app_url_with_params = f"{web_app_url}#{params_str}&data={b64_data}"
+    
+    logger.info(f"build_repeat_order_url: order_id={order_id}, location_id={location_id}, URL={web_app_url_with_params}")
+    
+    return web_app_url_with_params
+
+
 def get_order_keyboard(order: Dict, order_index: int, total_orders: int, user_id: Optional[int] = None) -> InlineKeyboardMarkup:
     """Создаёт клавиатуру для просмотра заказа"""
     keyboard = []
     
-    # Формируем URL для повторного заказа с данными
-    import urllib.parse
+    # Получаем order_id и location_id из заказа
+    order_id = str(order.get("id", ""))
+    location_id = str(order.get("locationId", "")) or str(order.get("location_id", ""))
     
-    # Базовый URL
-    web_app_url = WEB_APP_URL
+    if not location_id and order.get("location"):
+        # Пробуем получить location_id из объекта location
+        location = order.get("location")
+        if isinstance(location, dict):
+            location_id = str(location.get("id", "")) or str(location.get("locationId", ""))
     
-    # Параметры для передачи в WebApp
-    params = {
-        "action": "repeat_order",
-        "order_id": str(order.get("id", "")),
-    }
+    # Если location_id всё ещё нет, пробуем получить из контекста пользователя
+    if not location_id and user_id:
+        try:
+            ctx = get_user_location_context(user_id)
+            if ctx and ctx.get("location_id"):
+                location_id = ctx["location_id"]
+        except:
+            pass
     
-    # Добавляем название заказа (URL-encoded)
-    order_name = order.get("name", "")
-    if order_name:
-        params["order_name"] = order_name
-    
-    # Добавляем модификаторы
-    modifiers = order.get("modifiers", [])
-    if modifiers and len(modifiers) > 0:
-        if isinstance(modifiers, list):
-            # Кодируем каждый модификатор отдельно
-            modifiers_str = ",".join([urllib.parse.quote(str(mod)) for mod in modifiers])
-            params["modifiers"] = modifiers_str
-        else:
-            params["modifiers"] = str(modifiers)
-    
-    # Добавляем геолокацию, если она сохранена
-    location = order.get("location")
-    if location and location.get("latitude") and location.get("longitude"):
-        params["latitude"] = str(location.get("latitude", ""))
-        params["longitude"] = str(location.get("longitude", ""))
-    elif user_id:
-        # Если в заказе нет геолокации, пробуем получить из профиля пользователя
-        user_data = get_user_data(user_id)
-        if user_data and user_data.get("location"):
-            location = user_data["location"]
-            if location.get("latitude") and location.get("longitude"):
-                params["latitude"] = str(location.get("latitude", ""))
-                params["longitude"] = str(location.get("longitude", ""))
-    
-    # Формируем полный URL с параметрами
-    query_string = urllib.parse.urlencode(params, doseq=False)
-    web_app_url_with_params = f"{web_app_url}?{query_string}"
-    
-    web_app_info = WebAppInfo(url=web_app_url_with_params)
-    
-    # Кнопка "Повторить заказ" - открывает WebApp с данными заказа
-    keyboard.append([
-        InlineKeyboardButton(
-            text="☕ Повторить заказ",
-            web_app=web_app_info
-        )
-    ])
+    if order_id and location_id:
+        # Формируем URL для повторного заказа
+        web_app_url_with_params = build_repeat_order_url(order_id, location_id)
+        web_app_info = WebAppInfo(url=web_app_url_with_params)
+        
+        # Кнопка "Повторить заказ" - открывает WebApp с данными заказа
+        keyboard.append([
+            InlineKeyboardButton(
+                text="🔄 Повторить",
+                web_app=web_app_info
+            )
+        ])
+    else:
+        logger.warning(f"Не удалось сформировать URL для повторного заказа: order_id={order_id}, location_id={location_id}")
     
     # Кнопка для просмотра геолокации на карте, если есть
     # Используем геолокацию из заказа или из профиля пользователя
@@ -1277,6 +1286,7 @@ async def _process_orders(orders_data: List[Dict], user_location: Optional[Dict]
             "paymentStatus": order.get("paymentStatus"),
             "createdAt": order.get("createdAt") or order.get("created_at"),
             "total": order.get("totalAmount") or order.get("total") or 0,
+            "locationId": order.get("locationId") or order.get("location_id"),  # Добавляем locationId
             "location": user_location,
             "address": order.get("address") or order.get("deliveryAddress") or order.get("delivery_address"),
             "phone": order.get("phone") or order.get("phoneNumber") or order.get("phone_number"),
@@ -1413,7 +1423,7 @@ async def get_user_orders_from_db(user_id: int) -> List[Dict]:
 
 
 async def show_order_history(update: Update, context: ContextTypes.DEFAULT_TYPE, order_index: int = 0) -> None:
-    """Показывает заказ из истории"""
+    """Показывает последние 3 заказа с кнопкой Повторить под каждым"""
     try:
         user_id = update.effective_user.id if update.effective_user else None
         
@@ -1435,7 +1445,10 @@ async def show_order_history(update: Update, context: ContextTypes.DEFAULT_TYPE,
             return
         
         # Получаем заказы из Supabase (только из БД, без fallback)
-        orders = await get_user_orders_from_db(user_id)
+        all_orders = await get_user_orders_from_db(user_id)
+        
+        # Берем последние 3 заказа
+        orders = all_orders[:3]
         total_orders = len(orders)
         
         if total_orders == 0:
@@ -1456,81 +1469,69 @@ async def show_order_history(update: Update, context: ContextTypes.DEFAULT_TYPE,
                 await update.callback_query.answer()
             return
         
-        if order_index < 0 or order_index >= total_orders:
-            order_index = 0
+        # Формируем сообщение со списком заказов
+        message_text = "📜 Последние заказы\n\n"
         
-        order = orders[order_index]
+        for idx, order in enumerate(orders):
+            order_name = order.get("name", "Заказ")
+            order_total = order.get("total", 0)
+            order_date = order.get("createdAt", "")
+            
+            # Форматируем дату, если есть
+            date_str = ""
+            if order_date:
+                try:
+                    from datetime import datetime
+                    if isinstance(order_date, str):
+                        # Пробуем разные форматы
+                        for fmt in ["%Y-%m-%dT%H:%M:%S", "%Y-%m-%d %H:%M:%S", "%Y-%m-%d"]:
+                            try:
+                                dt = datetime.strptime(order_date.split('.')[0], fmt)
+                                date_str = dt.strftime("%d.%m.%Y %H:%M")
+                                break
+                            except:
+                                continue
+                except:
+                    date_str = str(order_date)[:10] if len(str(order_date)) > 10 else str(order_date)
+            
+            message_text += f"**{idx + 1}. {order_name}**\n"
+            if order_total:
+                message_text += f"💰 {order_total} ₽\n"
+            if date_str:
+                message_text += f"📅 {date_str}\n"
+            message_text += "\n"
         
-        # Формируем сообщение
-        message_text = format_order_message(order, order_index, total_orders)
+        # Создаём клавиатуру с кнопками "Повторить" для каждого заказа
+        keyboard = []
+        for idx, order in enumerate(orders):
+            order_keyboard = get_order_keyboard(order, idx, total_orders, user_id)
+            # Добавляем кнопки из клавиатуры заказа
+            for row in order_keyboard.inline_keyboard:
+                keyboard.append(row)
         
-        # Получаем user_id для передачи в клавиатуру
-        user_id = update.effective_user.id if update.effective_user else None
+        # Кнопка "В главное меню"
+        keyboard.append([
+            InlineKeyboardButton(text="<< Главное меню", callback_data="back_to_menu")
+        ])
         
-        # Создаём клавиатуру
-        keyboard = get_order_keyboard(order, order_index, total_orders, user_id)
+        final_keyboard = InlineKeyboardMarkup(keyboard)
         
-        # Отправляем фото и сообщение
+        # Отправляем сообщение
         if update.message:
-            # Если это новое сообщение (нажатие на кнопку)
-            try:
-                await update.message.reply_photo(
-                    photo=order["image_url"],
-                    caption=message_text,
-                    reply_markup=keyboard,
-                )
-            except Exception as e:
-                # Если не удалось отправить фото, отправляем только текст
-                logger.warning(f"Не удалось отправить фото: {e}")
-                await update.message.reply_text(
-                    message_text,
-                    reply_markup=keyboard,
-                )
+            await update.message.reply_text(
+                message_text,
+                reply_markup=final_keyboard,
+                parse_mode="Markdown",
+            )
         elif update.callback_query:
-            # Если это обновление через callback (навигация)
-            from telegram import InputMediaPhoto
-            
-            try:
-                # Пытаемся обновить фото
-                if update.callback_query.message.photo:
-                    # Если сообщение содержит фото, обновляем его
-                    media = InputMediaPhoto(
-                        media=order["image_url"],
-                        caption=message_text
-                    )
-                    await update.callback_query.message.edit_media(
-                        media=media,
-                        reply_markup=keyboard
-                    )
-                else:
-                    # Если сообщение не содержит фото, обновляем текст
-                    await update.callback_query.message.edit_text(
-                        message_text,
-                        reply_markup=keyboard,
-                    )
-            except Exception as e:
-                # Если не удалось обновить, удаляем старое сообщение и отправляем новое
-                logger.warning(f"Не удалось обновить сообщение: {e}")
-                try:
-                    await update.callback_query.message.delete()
-                except:
-                    pass
-                
-                try:
-                    await update.callback_query.message.reply_photo(
-                        photo=order["image_url"],
-                        caption=message_text,
-                        reply_markup=keyboard,
-                    )
-                except:
-                    await update.callback_query.message.reply_text(
-                        message_text,
-                        reply_markup=keyboard,
-                    )
-            
+            await update.callback_query.message.edit_text(
+                message_text,
+                reply_markup=final_keyboard,
+                parse_mode="Markdown",
+            )
             await update.callback_query.answer()
         
-        logger.info(f"Показан заказ {order_index + 1} из {total_orders} для пользователя {update.effective_user.id}")
+        logger.info(f"Показаны последние {total_orders} заказов для пользователя {user_id}")
     except Exception as e:
         logger.error(f"Ошибка при показе истории заказов: {e}", exc_info=True)
         keyboard = InlineKeyboardMarkup([[
