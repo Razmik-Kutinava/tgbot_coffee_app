@@ -1,0 +1,11 @@
+python-telegram-bot==21.6
+supabase==2.27.0
+postgrest==2.27.0
+realtime==2.27.0
+gotrue==2.12.4
+supabase-auth==2.27.0
+supabase-functions==2.27.0
+websockets>=13.0,<16.0
+python-dotenv==1.0.0
+
+

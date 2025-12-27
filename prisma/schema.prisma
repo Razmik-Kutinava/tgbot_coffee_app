@@ -1,0 +1,527 @@
+generator client {
+  provider        = "prisma-client-js"
+  binaryTargets   = ["native", "windows"]
+  previewFeatures = []
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ============================================
+// 1. USERS (Пользователи)
+// ============================================
+model User {
+  id                   String          @id @default(uuid())
+  telegramId           BigInt?         @unique
+  telegramUsername     String?
+  telegramFirstName    String?
+  telegramLastName     String?
+  telegramPhotoUrl     String?
+  telegramLanguageCode String?         @default("ru")
+  phone                String?
+  email                String?         @unique
+  role                 UserRole        @default(client)
+  status               UserStatus      @default(active)
+  preferredLocation    Location?       @relation("PreferredLocation", fields: [preferredLocationId], references: [id])
+  preferredLocationId  String?
+  acceptsMarketing     Boolean         @default(true)
+  lastOrderAt          DateTime?
+  totalOrdersCount     Int             @default(0)
+  totalOrdersAmount    Decimal         @default(0) @db.Decimal(12, 2)
+  lastSeenAt           DateTime?       @default(now())
+  metadata             Json?           @default("{}")
+  createdAt            DateTime        @default(now())
+  updatedAt            DateTime        @updatedAt
+
+  orders              Order[]
+  staff               LocationStaff[]
+  statusChanges       OrderStatusHistory[]
+  permissions         Permission[]
+  createdProducts     Product[]        @relation("ProductCreator")
+  approvedProducts    Product[]        @relation("ProductApprover")
+  createdPromocodes   Promocode[]
+  createdBroadcasts   Broadcast[]
+  assignedStaff       LocationStaff[]  @relation("StaffAssigner")
+  grantedPermissions  Permission[]     @relation("PermissionGranter")
+  acceptedOrders      Order[]          @relation("OrderAccepter")
+  completedOrders     Order[]          @relation("OrderCompleter")
+  cancelledOrders     Order[]          @relation("OrderCanceller")
+  notifications       Notification[]
+  botSessions         BotSession[]
+  promoCodeUsages     PromocodeUsage[]
+  auditLogs           AuditLog[]
+  ownedLocations      Location[]
+  broadcastLogs       BroadcastLog[]
+}
+
+// ============================================
+// 2. LOCATIONS (Точки продаж)
+// ============================================
+model Location {
+  id                 String          @id @default(uuid())
+  name               String
+  slug               String?         @unique
+  description        String?
+  address            String?
+  city               String?
+  latitude           Decimal?        @db.Decimal(10, 8)
+  longitude          Decimal?        @db.Decimal(11, 8)
+  phone              String?
+  owner              User?           @relation(fields: [ownerId], references: [id])
+  ownerId            String?
+  status             LocationStatus  @default(pending)
+  isAcceptingOrders  Boolean         @default(true)
+  workingHours       Json?           @default("{}")
+  useGlobalCatalog   Boolean         @default(true)
+  paymentSettings    Json?           @default("{}")
+  tvBoardEnabled     Boolean         @default(true)
+  tvBoardTheme       Json?           @default("{}")
+  legalDocuments     Json?           @default("{}")
+  metadata           Json?           @default("{}")
+  timezone           String?         @default("UTC")
+  createdAt          DateTime        @default(now())
+  updatedAt          DateTime        @updatedAt
+
+  preferredBy        User[]          @relation("PreferredLocation")
+  products           LocationProduct[]
+  orders             Order[]
+  staff              LocationStaff[]
+  promocodes         Promocode[]
+  categories         LocationCategory[]
+  permissions        Permission[]
+  broadcasts         Broadcast[]
+  botSessions        BotSession[]
+}
+
+// ============================================
+// 3. CATEGORIES (Категории товаров)
+// ============================================
+model Category {
+  id           String      @id @default(uuid())
+  name         String
+  slug         String?     @unique
+  description  String?
+  imageUrl     String?
+  parent       Category?   @relation("CategoryHierarchy", fields: [parentId], references: [id])
+  parentId     String?
+  sortOrder    Int         @default(0)
+  isActive     Boolean     @default(true)
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
+  children     Category[]  @relation("CategoryHierarchy")
+  products     Product[]
+  locations    LocationCategory[]
+}
+
+// ============================================
+// 4. PRODUCTS (Глобальный каталог товаров)
+// ============================================
+model Product {
+  id               String               @id @default(uuid())
+  name             String
+  slug             String?              @unique
+  description      String?
+  shortDescription String?
+  category         Category?            @relation(fields: [categoryId], references: [id])
+  categoryId       String?
+  imageUrl         String?
+  images           Json?                @default("[]")
+  price            Decimal              @db.Decimal(12, 2)
+  status           ProductStatus        @default(active)
+  creator          User?                @relation("ProductCreator", fields: [createdBy], references: [id])
+  createdBy        String?
+  approver         User?                @relation("ProductApprover", fields: [approvedBy], references: [id])
+  approvedBy       String?
+  approvedAt       DateTime?
+  isFeatured       Boolean              @default(false)
+  isNew            Boolean              @default(false)
+  metadata         Json?                @default("{}")
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @updatedAt
+
+  locations        LocationProduct[]
+  modifierGroups   ProductModifierGroup[]
+  orderItems       OrderItem[]
+}
+
+// ============================================
+// 5. MODIFIER GROUPS & OPTIONS
+// ============================================
+model ModifierGroup {
+  id         String        @id @default(uuid())
+  name       String
+  type       ModifierType  @default(single)
+  required   Boolean       @default(false)
+  minSelect  Int?          @default(0)
+  maxSelect  Int?
+  sortOrder  Int           @default(0)
+  createdAt  DateTime      @default(now())
+  updatedAt  DateTime      @updatedAt
+
+  options    ModifierOption[]
+  products   ProductModifierGroup[]
+}
+
+model ModifierOption {
+  id            String         @id @default(uuid())
+  group         ModifierGroup  @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  groupId       String
+  name          String
+  price         Decimal        @default(0) @db.Decimal(12, 2)
+  isDefault     Boolean        @default(false)
+  isActive      Boolean        @default(true)
+  sortOrder     Int            @default(0)
+  sku           String?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  orderItemMods OrderItemModifier[]
+}
+
+model ProductModifierGroup {
+  id               String         @id @default(uuid())
+  product          Product        @relation(fields: [productId], references: [id])
+  productId        String
+  modifierGroup    ModifierGroup  @relation(fields: [modifierGroupId], references: [id], onDelete: Cascade)
+  modifierGroupId  String
+  position         Int            @default(0)
+
+  @@unique([productId, modifierGroupId])
+}
+
+// ============================================
+// 6. LOCATION_PRODUCTS (Ассортимент точки)
+// ============================================
+model LocationProduct {
+  id                 String   @id @default(uuid())
+  location           Location @relation(fields: [locationId], references: [id])
+  locationId         String
+  product            Product  @relation(fields: [productId], references: [id])
+  productId          String
+  price              Decimal? @db.Decimal(12, 2)
+  stockQuantity      Int      @default(0)
+  minStockThreshold  Int      @default(5)
+  isAvailable        Boolean  @default(true)
+  unavailableReason  String?
+  sortOrder          Int      @default(0)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@unique([locationId, productId])
+}
+
+// ============================================
+// 7. LOCATION_CATEGORIES (Категории на точке)
+// ============================================
+model LocationCategory {
+  id           String    @id @default(uuid())
+  location     Location  @relation(fields: [locationId], references: [id])
+  locationId   String
+  category     Category  @relation(fields: [categoryId], references: [id])
+  categoryId   String
+  isVisible    Boolean   @default(true)
+  sortOrder    Int       @default(0)
+  nameOverride String?
+
+  @@unique([locationId, categoryId])
+}
+
+// ============================================
+// 8. ORDERS (Заказы)
+// ============================================
+model Order {
+  id                 String          @id @default(uuid())
+  orderNumber        Int?
+  user               User?           @relation(fields: [userId], references: [id])
+  userId             String?
+  location           Location        @relation(fields: [locationId], references: [id])
+  locationId         String
+  status             OrderStatus     @default(created)
+  subtotal           Decimal         @default(0) @db.Decimal(12, 2)
+  discountAmount     Decimal         @default(0) @db.Decimal(12, 2)
+  totalAmount        Decimal         @default(0) @db.Decimal(12, 2)
+  promocode          Promocode?      @relation(fields: [promocodeId], references: [id])
+  promocodeId        String?
+  promocodeText      String?
+  paymentStatus      PaymentStatus   @default(pending)
+  paymentProvider    String?
+  paymentId          String?
+  paymentData        Json?           @default("{}")
+  paidAt             DateTime?
+  customerName       String?
+  customerPhone      String?
+  comment            String?
+  acceptedAt         DateTime?
+  preparingAt        DateTime?
+  readyAt            DateTime?
+  completedAt        DateTime?
+  cancelledAt        DateTime?
+  accepter           User?           @relation("OrderAccepter", fields: [acceptedBy], references: [id])
+  acceptedBy         String?
+  completer          User?           @relation("OrderCompleter", fields: [completedBy], references: [id])
+  completedBy        String?
+  canceller          User?           @relation("OrderCanceller", fields: [cancelledBy], references: [id])
+  cancelledBy        String?
+  cancellationReason String?
+  createdAt          DateTime        @default(now())
+  updatedAt          DateTime        @updatedAt
+
+  items            OrderItem[]
+  history          OrderStatusHistory[]
+  notifications    Notification[]
+  promoCodeUsages  PromocodeUsage[]
+}
+
+// ============================================
+// 9. ORDER_ITEMS (Позиции заказа)
+// ============================================
+model OrderItem {
+  id              String   @id @default(uuid())
+  order           Order    @relation(fields: [orderId], references: [id])
+  orderId         String
+  product         Product  @relation(fields: [productId], references: [id])
+  productId       String
+  productName     String   @default("")
+  productImageUrl String?
+  quantity        Int      @default(1)
+  unitPrice       Decimal  @default(0) @db.Decimal(12, 2)
+  basePrice       Decimal  @default(0) @db.Decimal(12, 2)
+  modifiersPrice  Decimal  @default(0) @db.Decimal(12, 2)
+  totalPrice      Decimal  @db.Decimal(12, 2)
+  comment         String?
+  createdAt       DateTime @default(now())
+
+  modifiers       OrderItemModifier[]
+}
+
+// ============================================
+// 10. ORDER_ITEM_MODIFIERS (Модификаторы позиций)
+// ============================================
+model OrderItemModifier {
+  id                String         @id @default(uuid())
+  orderItem         OrderItem      @relation(fields: [orderItemId], references: [id])
+  orderItemId       String
+  modifierOption    ModifierOption @relation(fields: [modifierOptionId], references: [id])
+  modifierOptionId  String
+  modifierGroupName String
+  modifierOptionName String
+  price             Decimal        @db.Decimal(12, 2)
+  createdAt         DateTime       @default(now())
+}
+
+// ============================================
+// 11. ORDER_STATUS_HISTORY (История статусов)
+// ============================================
+model OrderStatusHistory {
+  id          String       @id @default(uuid())
+  order       Order        @relation(fields: [orderId], references: [id])
+  orderId     String
+  oldStatus   OrderStatus?
+  newStatus   OrderStatus  @default(created)
+  changedBy   User?        @relation(fields: [changedById], references: [id])
+  changedById String?
+  changeSource String?
+  comment     String?
+  createdAt   DateTime     @default(now())
+}
+
+// ============================================
+// 12. PROMO_CODES (Промокоды)
+// ============================================
+model Promocode {
+  id                 String          @id @default(uuid())
+  code               String          @unique
+  description        String?
+  type               PromocodeType   @default(percent)
+  value              Decimal         @db.Decimal(12, 2)
+  scope              PromocodeScope  @default(global)
+  location           Location?       @relation(fields: [locationId], references: [id])
+  locationId         String?
+  minOrderAmount     Decimal?        @db.Decimal(12, 2)
+  maxDiscountAmount  Decimal?        @db.Decimal(12, 2)
+  usageLimit         Int?
+  usageLimitPerUser  Int             @default(1)
+  usedCount          Int             @default(0)
+  startsAt           DateTime?
+  endsAt             DateTime?
+  isActive           Boolean         @default(true)
+  creator            User?           @relation(fields: [createdBy], references: [id])
+  createdBy          String?
+  createdAt          DateTime        @default(now())
+  updatedAt          DateTime        @updatedAt
+
+  orders            Order[]
+  usages            PromocodeUsage[]
+}
+
+model PromocodeUsage {
+  id              String   @id @default(uuid())
+  promocode       Promocode @relation(fields: [promocodeId], references: [id])
+  promocodeId     String
+  user            User     @relation(fields: [userId], references: [id])
+  userId          String
+  order           Order    @relation(fields: [orderId], references: [id])
+  orderId         String
+  discountApplied Decimal  @db.Decimal(12, 2)
+  createdAt       DateTime @default(now())
+
+  @@unique([promocodeId, orderId])
+}
+
+// ============================================
+// 13. PERMISSIONS (Гранулярная система доступов)
+// ============================================
+model Permission {
+  id         String           @id @default(uuid())
+  user       User             @relation(fields: [userId], references: [id])
+  userId     String
+  location   Location?        @relation(fields: [locationId], references: [id])
+  locationId String?
+  module     PermissionModule
+  action     PermissionAction
+  granter    User?            @relation("PermissionGranter", fields: [grantedBy], references: [id])
+  grantedBy  String?
+  grantedAt  DateTime         @default(now())
+  expiresAt  DateTime?
+
+  @@unique([userId, locationId, module, action])
+}
+
+// ============================================
+// 14. LOCATION_STAFF (Привязка сотрудников к точкам)
+// ============================================
+model LocationStaff {
+  id          String    @id @default(uuid())
+  location    Location  @relation(fields: [locationId], references: [id])
+  locationId  String
+  user        User      @relation(fields: [userId], references: [id])
+  userId      String
+  position    String?
+  isActive    Boolean   @default(true)
+  hiredAt     DateTime  @default(now())
+  firedAt     DateTime?
+  assigner    User?     @relation("StaffAssigner", fields: [assignedBy], references: [id])
+  assignedBy  String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@unique([locationId, userId])
+}
+
+// ============================================
+// 15. BROADCASTS (Рассылки)
+// ============================================
+model Broadcast {
+  id               String           @id @default(uuid())
+  title            String?
+  message          String
+  imageUrl         String?
+  buttonText       String?
+  buttonUrl        String?
+  scope            BroadcastScope   @default(all)
+  location         Location?        @relation(fields: [locationId], references: [id])
+  locationId       String?
+  segmentFilter    Json?            @default("{}")
+  totalRecipients  Int              @default(0)
+  sentCount        Int              @default(0)
+  deliveredCount   Int              @default(0)
+  readCount        Int              @default(0)
+  status           BroadcastStatus  @default(draft)
+  scheduledAt      DateTime?
+  startedAt        DateTime?
+  completedAt      DateTime?
+  creator          User?            @relation(fields: [createdBy], references: [id])
+  createdBy        String?
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+
+  logs             BroadcastLog[]
+}
+
+model BroadcastLog {
+  id                String    @id @default(uuid())
+  broadcast         Broadcast @relation(fields: [broadcastId], references: [id])
+  broadcastId       String
+  user              User      @relation(fields: [userId], references: [id])
+  userId            String
+  telegramMessageId BigInt?
+  status            String?
+  errorMessage      String?
+  sentAt            DateTime  @default(now())
+}
+
+// ============================================
+// 16. NOTIFICATIONS (Уведомления)
+// ============================================
+model Notification {
+  id                String            @id @default(uuid())
+  user              User              @relation(fields: [userId], references: [id])
+  userId            String
+  type              NotificationType
+  title             String?
+  message           String
+  order             Order?            @relation(fields: [orderId], references: [id])
+  orderId           String?
+  telegramMessageId BigInt?
+  isSent            Boolean           @default(false)
+  sentAt            DateTime?
+  isRead            Boolean           @default(false)
+  readAt            DateTime?
+  createdAt         DateTime          @default(now())
+}
+
+// ============================================
+// 17. BOT_SESSIONS (Сессии Telegram бота)
+// ============================================
+model BotSession {
+  id                 String    @id @default(uuid())
+  user               User      @relation(fields: [userId], references: [id])
+  userId             String
+  telegramChatId     BigInt    @unique
+  currentState       String?
+  stateData          Json?     @default("{}")
+  cart               Json?     @default("[]")
+  selectedLocation   Location? @relation(fields: [selectedLocationId], references: [id])
+  selectedLocationId String?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+}
+
+// ============================================
+// 18. AUDIT_LOG (Логи действий)
+// ============================================
+model AuditLog {
+  id         String   @id @default(uuid())
+  user       User?    @relation(fields: [userId], references: [id])
+  userId     String?
+  action     String
+  entityType String
+  entityId   String
+  oldData    Json?
+  newData    Json?
+  ipAddress  String?
+  userAgent  String?
+  createdAt  DateTime @default(now())
+}
+
+// ============================================
+// ENUMS
+// ============================================
+enum UserRole { client customer barista manager franchisee staff_uk superadmin }
+enum UserStatus { active blocked deactivated }
+enum LocationStatus { active inactive closed pending }
+enum ProductStatus { active inactive pending_moderation rejected }
+enum ModifierType { single multiple }
+enum OrderStatus { pending created paid accepted in_progress preparing ready completed cancelled refunded }
+enum PaymentStatus { pending processing succeeded failed refunded cancelled }
+enum PromocodeScope { global location }
+enum PromocodeType { percent fixed }
+enum PermissionModule { categories products orders users broadcasts promo_codes statistics staff settings locations reviews bot_manager app_design }
+enum PermissionAction { view create edit delete export manage_stock change_status send approve grant_access }
+enum BroadcastStatus { draft scheduled sending sent cancelled }
+enum BroadcastScope { all location segment }
+enum NotificationType { order_created order_accepted order_preparing order_ready order_completed order_cancelled promo_code broadcast system }

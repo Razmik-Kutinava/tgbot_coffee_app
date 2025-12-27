@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//c/Tools/workarea/test_feature/fl_mini_app_v3/web/**)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
