@@ -126,7 +126,7 @@ SAMPLE_ORDERS = [
 
 
 def get_main_keyboard(user_id: Optional[int] = None):
-    """Создаёт основную клавиатуру (динамический URL каталога с учётом последней точки)"""
+    """Создаёт основную клавиатуру (динамический URL меню с учётом последней точки)"""
     print(f"\n{'#'*70}")
     print(f"# get_main_keyboard CALLED with user_id={user_id}")
     print(f"{'#'*70}")
@@ -153,7 +153,7 @@ def get_main_keyboard(user_id: Optional[int] = None):
     web_app_info = WebAppInfo(url=web_app_url)
     
     keyboard = [
-        [InlineKeyboardButton(text="📦 Открыть каталог", web_app=web_app_info)],
+        [InlineKeyboardButton(text="📦 Открыть меню", web_app=web_app_info)],
         [InlineKeyboardButton(text="📜 Мои заказы", callback_data="menu_order_history")],
         [InlineKeyboardButton(text="👤 Профиль", callback_data="menu_profile")],
         [InlineKeyboardButton(text="📄 Документы", callback_data="menu_documents")],
@@ -437,7 +437,7 @@ def get_user_from_db(user_id: int) -> Optional[Dict]:
 
 
 def get_user_location_context(user_id: int) -> Optional[Dict]:
-    """Определяет последнюю локацию пользователя для открытия каталога"""
+    """Определяет последнюю локацию пользователя для открытия меню"""
     if not supabase:
         logger.warning("get_user_location_context: supabase не инициализирован")
         return None
@@ -1038,7 +1038,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                     f"Привет, {user_name}! 👋\n\n"
                     f"📍 Твоя кофейня: {location_name}\n\n"
                     "Выбери действие:\n\n"
-                    "📦 Открыть каталог — сразу в твою кофейню\n"
+                    "📦 Открыть меню — сразу в твою кофейню\n"
                     "📜 Мои заказы — твои предыдущие заказы\n"
                     "👤 Профиль — личные данные\n"
                     "📄 Документы — чеки и документы\n"
@@ -1048,7 +1048,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                 welcome_text = (
                     f"Привет, {user_name}! 👋\n\n"
                     "Выбери действие:\n\n"
-                    "📦 Открыть каталог — просмотр товаров\n"
+                    "📦 Открыть меню — просмотр товаров\n"
                     "📜 Мои заказы — твои предыдущие заказы\n"
                     "👤 Профиль — личные данные\n"
                     "📄 Документы — чеки и документы\n"
@@ -1057,7 +1057,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         else:
             welcome_text = (
                 "Привет! Выбери действие:\n\n"
-                "📦 Открыть каталог — просмотр товаров\n"
+                "📦 Открыть меню — просмотр товаров\n"
                 "📜 Мои заказы — твои предыдущие заказы\n"
                 "👤 Профиль — личные данные\n"
                 "📄 Документы — чеки и документы\n"
@@ -1809,7 +1809,7 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
                     welcome_text = (
                         f"Привет, {user_name}! 👋\n\n"
                         "Выбери действие:\n\n"
-                        "📦 Открыть каталог — просмотр товаров\n"
+                        "📦 Открыть меню — просмотр товаров\n"
                         "📜 Мои заказы — твои предыдущие заказы\n"
                         "👤 Профиль — личные данные\n"
                         "📄 Документы — чеки и документы\n"
@@ -1818,7 +1818,7 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
             else:
                 welcome_text = (
                     "Привет! Выбери действие:\n\n"
-                    "📦 Открыть каталог — просмотр товаров\n"
+                    "📦 Открыть меню — просмотр товаров\n"
                     "📜 Мои заказы — твои предыдущие заказы\n"
                     "👤 Профиль — личные данные\n"
                     "📄 Документы — чеки и документы\n"
@@ -1997,10 +1997,10 @@ async def post_init(application: Application) -> None:
     """Настройка бота после инициализации (установка Menu Button)"""
     try:
         web_app_info = WebAppInfo(url=WEB_APP_URL)
-        menu_button = MenuButtonWebApp(text="🏪 Магазин", web_app=web_app_info)
+        menu_button = MenuButtonWebApp(text="Перейти в меню", web_app=web_app_info)
         # Устанавливаем Menu Button глобально (chat_id=None означает глобальная установка)
         await application.bot.set_chat_menu_button(chat_id=None, menu_button=menu_button)
-        logger.info("Menu Button 'Магазин' установлен глобально")
+        logger.info("Menu Button 'Перейти в меню' установлен глобально")
     except Exception as e:
         logger.error(f"Ошибка при установке Menu Button: {e}", exc_info=True)
 
